@@ -1,12 +1,14 @@
-FROM oven/bun:1 AS builder
+FROM oven/bun AS builder
 WORKDIR /usr/src/app
 
 COPY . .
 
-RUN bun install --frozen-lockfile --production
+RUN bun install --frozen-lockfile
 RUN bun run build
 
-FROM oven/bun:1 AS runner
+RUN rm -rf node_modules && bun install --frozen-lockfile --production
+
+FROM oven/bun AS runner
 ENV NODE_ENV=production
 USER bun
 WORKDIR /app
