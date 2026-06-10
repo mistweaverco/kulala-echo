@@ -1,0 +1,312 @@
+html {
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  html {
+    color-scheme: dark;
+  }
+
+  body,
+  body .swagger-ui .opblock .opblock-section-header,
+  body .swagger-ui .dialog-ux .modal-ux,
+  body .swagger-ui .scheme-container,
+  body .swagger-ui select,
+  .swagger-ui {
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+
+  body .swagger-ui .info h1,
+  body .swagger-ui .info h2,
+  body .swagger-ui .info h3,
+  body .swagger-ui .info h4,
+  body .swagger-ui .info h5,
+  body .swagger-ui .info li,
+  body .swagger-ui .info p,
+  body .swagger-ui .info table,
+  body .swagger-ui .info .title,
+  body .swagger-ui label,
+  body .swagger-ui .response-col_status,
+  body .swagger-ui .response-col_links,
+  body .swagger-ui .responses-inner h4,
+  body .swagger-ui .responses-inner h5,
+  body .swagger-ui table thead tr td,
+  body .swagger-ui table thead tr th,
+  body .swagger-ui .dialog-ux .modal-ux-header h3,
+  body .swagger-ui .dialog-ux .modal-ux-content h4,
+  body .swagger-ui .opblock .opblock-section-header h4,
+  body .swagger-ui .opblock .opblock-summary-description,
+  body .swagger-ui .opblock-description-wrapper,
+  body .swagger-ui .opblock-external-docs-wrapper,
+  body .swagger-ui .opblock-title_normal,
+  body .swagger-ui .opblock-description-wrapper p,
+  body .swagger-ui .opblock-external-docs-wrapper p,
+  body .swagger-ui .opblock-title_normal p,
+  body .swagger-ui a.nostyle,
+  body .swagger-ui a.nostyle:visited {
+    color: #e2e8f0;
+  }
+
+  body .swagger-ui .tab li button.tablinks {
+    color: #e2e8f0;
+  }
+
+  body .swagger-ui input[type=email],
+  body .swagger-ui input[type=file],
+  body .swagger-ui input[type=password],
+  body .swagger-ui input[type=search],
+  body .swagger-ui input[type=text],
+  body .swagger-ui textarea {
+    color: #e2e8f0;
+    background: #020617;
+  }
+
+  .swagger-ui .topbar {
+    background: #020617;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .swagger-ui .topbar .download-url-wrapper input[type="text"] {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
+  .swagger-ui .info .title,
+  .swagger-ui .info p,
+  .swagger-ui .info li,
+  .swagger-ui .info a,
+  .swagger-ui .info .base-url,
+  .swagger-ui .info .title small,
+  .swagger-ui .info .title small pre,
+  .swagger-ui .opblock-tag,
+  .swagger-ui .opblock-tag small,
+  .swagger-ui section.models h4,
+  .swagger-ui section.models h4 span,
+  .swagger-ui .model-title,
+  .swagger-ui .model .property,
+  .swagger-ui .model .property.primitive,
+  .swagger-ui .prop-format,
+  .swagger-ui table thead tr th,
+  .swagger-ui table thead tr td,
+  .swagger-ui table tbody tr td,
+  .swagger-ui .parameter__name,
+  .swagger-ui .parameter__type,
+  .swagger-ui .parameter__in,
+  .swagger-ui .response-col_status,
+  .swagger-ui .response-col_links,
+  .swagger-ui .response-col_description__inner,
+  .swagger-ui .response-col_description__inner div,
+  .swagger-ui .tab li,
+  .swagger-ui .opblock-description-wrapper p,
+  .swagger-ui .opblock-external-docs-wrapper p,
+  .swagger-ui .opblock-title_normal,
+  .swagger-ui label,
+  .swagger-ui .markdown p,
+  .swagger-ui .markdown li,
+  .swagger-ui .renderedMarkdown p {
+    color: #e2e8f0;
+  }
+
+  .swagger-ui .info .title small.version-stamp {
+    background: #1e293b;
+  }
+
+  .swagger-ui .opblock .opblock-summary-description,
+  .swagger-ui .opblock .opblock-summary-path,
+  .swagger-ui .opblock .opblock-summary-path__deprecated,
+  .swagger-ui .opblock .opblock-section-header h4,
+  .swagger-ui .opblock .opblock-section-header label,
+  .swagger-ui .opblock .opblock-section-header .try-out__btn {
+    color: #cbd5e1;
+  }
+
+  .swagger-ui .opblock .opblock-section-header {
+    background: #1e293b;
+    box-shadow: 0 1px 0 #334155;
+  }
+
+  .swagger-ui .opblock {
+    border-color: #334155;
+    background: rgba(255, 255, 255, 0.02);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  }
+
+  .swagger-ui .opblock .opblock-summary {
+    border-color: #334155;
+  }
+
+  .swagger-ui .opblock.opblock-get .opblock-summary {
+    border-color: #0369a1;
+  }
+
+  .swagger-ui .opblock.opblock-post .opblock-summary {
+    border-color: #15803d;
+  }
+
+  .swagger-ui .opblock.opblock-put .opblock-summary {
+    border-color: #b45309;
+  }
+
+  .swagger-ui .opblock.opblock-delete .opblock-summary {
+    border-color: #b91c1c;
+  }
+
+  .swagger-ui .opblock.opblock-patch .opblock-summary {
+    border-color: #7c3aed;
+  }
+
+  .swagger-ui .opblock-body,
+  .swagger-ui .opblock-body pre.mermaid,
+  .swagger-ui .opblock-body pre.microlight,
+  .swagger-ui .model-box,
+  .swagger-ui .model-box-control,
+  .swagger-ui .models-control,
+  .swagger-ui section.models {
+    background: #1e293b;
+  }
+
+  .swagger-ui .model-toggle::after {
+    background: #64748b;
+  }
+
+  .swagger-ui section.models {
+    border-color: #334155;
+  }
+
+  .swagger-ui section.models.is-open h4 {
+    border-color: #334155;
+  }
+
+  .swagger-ui .scheme-container {
+    background: #1e293b;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .swagger-ui .scheme-container .schemes > label {
+    color: #e2e8f0;
+  }
+
+  .swagger-ui input[type="text"],
+  .swagger-ui input[type="password"],
+  .swagger-ui input[type="search"],
+  .swagger-ui input[type="email"],
+  .swagger-ui input[type="file"],
+  .swagger-ui textarea,
+  .swagger-ui select {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-color: #334155;
+  }
+
+  .swagger-ui textarea:focus,
+  .swagger-ui input[type="text"]:focus,
+  .swagger-ui select:focus {
+    border-color: #64748b;
+    outline: none;
+  }
+
+  .swagger-ui .btn {
+    color: #e2e8f0;
+    border-color: #475569;
+    background: #1e293b;
+  }
+
+  .swagger-ui .btn:hover {
+    background: #334155;
+  }
+
+  .swagger-ui .btn.authorize {
+    border-color: #64748b;
+    color: #e2e8f0;
+  }
+
+  .swagger-ui .btn.authorize svg {
+    fill: #e2e8f0;
+  }
+
+  .swagger-ui .btn.cancel {
+    background: transparent;
+    border-color: #ef4444;
+    color: #fca5a5;
+  }
+
+  .swagger-ui .btn.execute {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+  }
+
+  .swagger-ui .btn.execute:hover {
+    background: #1d4ed8;
+  }
+
+  .swagger-ui .auth-container,
+  .swagger-ui .dialog-ux .modal-ux,
+  .swagger-ui .dialog-ux .modal-ux-content {
+    background: #1e293b;
+    color: #e2e8f0;
+  }
+
+  .swagger-ui .dialog-ux .modal-ux-header {
+    border-color: #334155;
+  }
+
+  .swagger-ui .dialog-ux .modal-ux-header h3 {
+    color: #e2e8f0;
+  }
+
+  .swagger-ui .auth-btn-wrapper .btn-done {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+  }
+
+  .swagger-ui .loading-container .loading::before {
+    border-color: rgba(226, 232, 240, 0.1);
+    border-top-color: #e2e8f0;
+  }
+
+  .swagger-ui .copy-to-clipboard {
+    background: #334155;
+  }
+
+  .swagger-ui .copy-to-clipboard button {
+    background: #334155;
+  }
+
+  .swagger-ui .arrow {
+    fill: #94a3b8;
+  }
+
+  .swagger-ui svg:not(:root) {
+    fill: #94a3b8;
+  }
+
+  .swagger-ui .opblock-summary-control:focus {
+    outline: none;
+  }
+
+  .swagger-ui .responses-inner h4,
+  .swagger-ui .responses-inner h5 {
+    color: #e2e8f0;
+  }
+
+  .swagger-ui .response-control-media-type__accept-message {
+    color: #94a3b8;
+  }
+
+  .swagger-ui .highlight-code > .microlight {
+    background: #020617 !important;
+    color: #e2e8f0 !important;
+  }
+
+  .swagger-ui .opblock-tag-section {
+    border-bottom-color: #334155;
+  }
+
+  .swagger-ui .wrapper {
+    padding-bottom: 2rem;
+  }
+}
