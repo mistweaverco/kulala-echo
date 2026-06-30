@@ -169,22 +169,28 @@ const parseQueryArgs = (c: Context): Record<string, string | string[]> => {
   return args;
 };
 
-export const getRequestInfo = async (c: Context) => {
-  const contentType = c.req.header("content-type")?.split(";")[0]?.trim() ?? "";
+/** Parse request body for echo output (mirrors JetBrains: JSON without Content-Type). */
+export function parseEchoRequestBody(
+  contentType: string,
+  body: string,
+): {
+  data: unknown;
+  json: unknown;
+  form: Record<string, unknown>;
+  files: Record<string, unknown>;
+} {
   const form: Record<string, unknown> = {};
   let data: unknown = "";
   let json: unknown = null;
   const files: Record<string, unknown> = {};
 
   if (contentType === "application/x-www-form-urlencoded") {
-    const body = await c.req.text();
     const params = new URLSearchParams(body);
     params.forEach((value, name) => {
       form[name] = value;
     });
     data = body;
   } else if (contentType === "application/json") {
-    const body = await c.req.text();
     data = body;
     try {
       json = JSON.parse(body);
@@ -192,6 +198,30 @@ export const getRequestInfo = async (c: Context) => {
       json = null;
     }
   } else if (contentType === "multipart/form-data") {
+    // multipart is handled via formData() in getRequestInfo
+    return { data: "", json: null, form, files };
+  } else if (contentType) {
+    data = body;
+  } else if (body !== "") {
+    data = body;
+    try {
+      json = JSON.parse(body);
+    } catch {
+      json = null;
+    }
+  }
+
+  return { data: data ?? "", json, form, files };
+}
+
+export const getRequestInfo = async (c: Context) => {
+  const contentType = c.req.header("content-type")?.split(";")[0]?.trim() ?? "";
+  let form: Record<string, unknown> = {};
+  let data: unknown = "";
+  let json: unknown = null;
+  const files: Record<string, unknown> = {};
+
+  if (contentType === "multipart/form-data") {
     const formData = await c.req.raw.formData();
     for (const [name, value] of formData.entries()) {
       if (value instanceof File) {
@@ -205,8 +235,13 @@ export const getRequestInfo = async (c: Context) => {
       }
     }
     data = "";
-  } else if (contentType) {
-    data = await c.req.text();
+  } else {
+    const body = await c.req.text();
+    const parsed = parseEchoRequestBody(contentType, body);
+    form = parsed.form;
+    data = parsed.data;
+    json = parsed.json;
+    Object.assign(files, parsed.files);
   }
 
   return {

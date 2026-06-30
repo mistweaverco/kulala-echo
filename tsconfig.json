@@ -4,6 +4,6 @@
     "strict": true,
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
-    "types": ["node"]
+    "types": ["node", "bun"]
   }
 }
