@@ -52,11 +52,11 @@ html {
     color: #e2e8f0;
   }
 
-  body .swagger-ui input[type=email],
-  body .swagger-ui input[type=file],
-  body .swagger-ui input[type=password],
-  body .swagger-ui input[type=search],
-  body .swagger-ui input[type=text],
+  body .swagger-ui input[type="email"],
+  body .swagger-ui input[type="file"],
+  body .swagger-ui input[type="password"],
+  body .swagger-ui input[type="search"],
+  body .swagger-ui input[type="text"],
   body .swagger-ui textarea {
     color: #e2e8f0;
     background: #020617;

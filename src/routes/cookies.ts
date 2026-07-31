@@ -1,95 +1,45 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { createRoute, type RouteConfig } from "@hono/zod-openapi";
-import { createSimpleRoute, jsonResponse } from "./../utils";
-
-interface GetDefaultRouteParams {
-  tags: RouteConfig["tags"];
-  summary: RouteConfig["summary"];
-  method: RouteConfig["method"];
-  path: RouteConfig["path"];
-  parameters?: RouteConfig["parameters"];
-  security?: RouteConfig["security"];
-  requestDescription: string;
-  responseDescription: string;
-  customResponses?: RouteConfig["responses"];
-}
-
-export const getCookieRoute = (opts: GetDefaultRouteParams) => {
-  const defaultResponses: RouteConfig["responses"] = {
-    200: {
-      description: "OK",
-      content: {
-        "application/json": {
-          schema: {
-            type: "object",
-            properties: {
-              cookies: { type: "object" },
-            },
-          },
-        },
-      },
-    },
-  };
-  if (opts.customResponses) {
-    Object.entries(opts.customResponses).forEach(([key, value]) => {
-      defaultResponses[key] = value;
-    });
-  }
-  return createRoute({
-    tags: opts.tags,
-    summary: opts.summary,
-    method: opts.method,
-    path: opts.path,
-    parameters: opts.parameters,
-    security: opts.security,
-    request: {
-      body: opts.method === "get" ? undefined : {
-        content: {
-          "application/json": { schema: { type: "object" } },
-        },
-        description: opts.requestDescription,
-        required: false,
-      },
-    },
-    responses: defaultResponses,
-  });
-};
-
-const parseCookies = (cookieHeader: string): Record<string, string> => {
-  return cookieHeader.split(";").reduce(
-    (acc: Record<string, string>, cookie) => {
-      const [name, value] = cookie.trim().split("=");
-      if (name && value) {
-        acc[name] = value;
-      }
-      return acc;
-    },
-    {},
-  );
-};
+import { createSimpleRoute, jsonResponse } from "../utils";
 
 const cookieRouter = new OpenAPIHono();
 
-const setCookieHeader = (name: string, value: string) =>
-  `${name}=${value}; Path=/; Secure; HttpOnly; SameSite=Lax`;
+const cookiesSchema = {
+  type: "object",
+  properties: {
+    cookies: { type: "object", additionalProperties: { type: "string" } },
+  },
+} as const;
 
-const setCookiesFromQuery = (c: {
-  req: { url: string };
-  header: (name: string, value: string, options?: { append?: boolean }) => void;
-  json: (data: unknown, status?: number) => Response;
-  redirect: (location: string) => Response;
-}) => {
-  const url = new URL(c.req.url);
-  const cookies: string[] = [];
-  url.searchParams.forEach((value, name) => {
-    cookies.push(setCookieHeader(name, value));
-  });
-  if (cookies.length === 0) {
-    return c.json({ error: "No cookies specified" }, 400);
-  }
-  cookies.forEach((cookie) => c.header("Set-Cookie", cookie, { append: true }));
-  return c.redirect("/cookies");
+const parseCookies = (cookieHeader: string | undefined): Record<string, string> => {
+  if (!cookieHeader) return {};
+  return cookieHeader.split(";").reduce((acc: Record<string, string>, cookie) => {
+    const eq = cookie.indexOf("=");
+    if (eq === -1) return acc;
+    const name = cookie.slice(0, eq).trim();
+    const value = cookie.slice(eq + 1).trim();
+    if (name) {
+      acc[name] = value;
+    }
+    return acc;
+  }, {});
 };
+
+const setCookieHeader = (name: string, value: string) => `${name}=${value}; Path=/`;
+
+const deleteCookieHeader = (name: string) => `${name}=; Path=/; Max-Age=0`;
+
+cookieRouter.openapi(
+  createSimpleRoute({
+    tags: ["Cookies"],
+    summary: "Get cookies sent by the client",
+    method: "get",
+    path: "/",
+    responses: {
+      200: jsonResponse(cookiesSchema),
+    },
+  }),
+  (c) => c.json({ cookies: parseCookies(c.req.header("cookie")) }),
+);
 
 cookieRouter.openapi(
   createSimpleRoute({
@@ -103,67 +53,69 @@ cookieRouter.openapi(
         in: "query",
         required: false,
         schema: { type: "string" },
-        description: "Cookie name (any query param name=value pair sets a cookie)",
+        description: "Any query param name=value pair sets a cookie",
       },
     ],
     responses: {
       302: { description: "Redirect to /cookies" },
-      400: jsonResponse(
-        { type: "object", properties: { error: { type: "string" } } },
-        "Bad Request",
-      ),
-    },
-  }),
-  setCookiesFromQuery,
-);
-
-cookieRouter.openapi(
-  getCookieRoute({
-    tags: ["Cookies"],
-    summary: "Set a cookie with the given name and value",
-    method: "get",
-    path: "/set/{cookieName}/{cookieValue}",
-    parameters: [
-      {
-        name: "cookieName",
-        in: "path",
-        required: true,
-        schema: { type: "string" },
-      },
-      {
-        name: "cookieValue",
-        in: "path",
-        required: true,
-        schema: { type: "string" },
-      },
-    ],
-    requestDescription: "Set a cookie with the given name and value",
-    responseDescription: "302 Redirect",
-    customResponses: {
-      302: { description: "Redirect to /cookies" },
     },
   }),
   (c) => {
-    const cookieName = c.req.param("cookieName") || "kulala";
-    const cookieValue = c.req.param("cookieValue") || "family";
-    c.header("Set-Cookie", setCookieHeader(cookieName, cookieValue));
+    const url = new URL(c.req.url);
+    url.searchParams.forEach((value, name) => {
+      c.header("Set-Cookie", setCookieHeader(name, value), { append: true });
+    });
     return c.redirect("/cookies");
   },
 );
 
 cookieRouter.openapi(
-  getCookieRoute({
+  createSimpleRoute({
     tags: ["Cookies"],
-    summary: "Get cookies sent by the client",
+    summary: "Set a cookie with the given name and value",
     method: "get",
-    path: "/",
-    parameters: [],
-    requestDescription: "Get cookies sent by the client",
-    responseDescription: "200 OK",
+    path: "/set/{name}/{value}",
+    parameters: [
+      { name: "name", in: "path", required: true, schema: { type: "string" } },
+      { name: "value", in: "path", required: true, schema: { type: "string" } },
+    ],
+    responses: {
+      302: { description: "Redirect to /cookies" },
+    },
   }),
   (c) => {
-    const cookies = c.req.header("cookie") || "";
-    return c.json({ cookies: parseCookies(cookies) });
+    const name = c.req.param("name") ?? "";
+    const value = c.req.param("value") ?? "";
+    c.header("Set-Cookie", setCookieHeader(name, value));
+    return c.redirect("/cookies");
+  },
+);
+
+cookieRouter.openapi(
+  createSimpleRoute({
+    tags: ["Cookies"],
+    summary: "Delete cookies given as query param names",
+    method: "get",
+    path: "/delete",
+    parameters: [
+      {
+        name: "name",
+        in: "query",
+        required: false,
+        schema: { type: "string" },
+        description: "Cookie names to delete (values ignored)",
+      },
+    ],
+    responses: {
+      302: { description: "Redirect to /cookies" },
+    },
+  }),
+  (c) => {
+    const url = new URL(c.req.url);
+    for (const name of url.searchParams.keys()) {
+      c.header("Set-Cookie", deleteCookieHeader(name), { append: true });
+    }
+    return c.redirect("/cookies");
   },
 );
 

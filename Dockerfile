@@ -1,20 +1,22 @@
 FROM oven/bun AS builder
 WORKDIR /usr/src/app
 
-COPY . .
-
-RUN bun install --frozen-lockfile
-RUN bun run build
-
-RUN rm -rf node_modules && bun install --frozen-lockfile --production
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
 
 FROM oven/bun AS runner
 ENV NODE_ENV=production
+ENV PORT=3000
+ENV GRPC_PORT=50051
 USER bun
 WORKDIR /app
 COPY --from=builder /usr/src/app/node_modules ./node_modules
-COPY --from=builder /usr/src/app/dist ./dist
-COPY --from=builder /usr/src/app/package.json ./package.json
-COPY --from=builder /usr/src/app/static ./static
+COPY package.json bun.lock ./
+COPY src ./src
+COPY static ./static
+COPY proto ./proto
 
-ENTRYPOINT [ "bun", "run", "." ]
+EXPOSE 3000
+EXPOSE 50051
+
+ENTRYPOINT [ "bun", "run", "src/index.ts" ]

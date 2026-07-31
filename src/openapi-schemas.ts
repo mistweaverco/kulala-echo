@@ -1,3 +1,5 @@
+/** Shared OpenAPI response schemas and media-type examples for echo endpoints. */
+
 export const echoResponseJsonSchema = {
   type: "object",
   properties: {
@@ -16,30 +18,54 @@ export const echoResponseJsonSchema = {
   },
 } as const;
 
+/**
+ * Explicit XML example - Swagger UI cannot reliably generate XML samples from
+ * object schemas that use additionalProperties / nested maps.
+ */
+export const echoResponseXmlExample = `<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <method>GET</method>
+  <args>
+    <foo>bar</foo>
+  </args>
+  <headers>
+    <Accept>application/xml</Accept>
+    <Host>echo.kulala.app</Host>
+  </headers>
+  <origin>127.0.0.1</origin>
+  <url>https://echo.kulala.app/get?foo=bar</url>
+  <form/>
+  <data></data>
+  <json/>
+  <files/>
+</response>`;
+
 export const echoResponseXmlSchema = {
   type: "object",
   xml: { name: "response" },
   properties: {
-    method: { type: "string", example: "GET" },
+    method: { type: "string", example: "GET", xml: { name: "method" } },
     args: {
       type: "object",
       xml: { name: "args" },
       additionalProperties: { type: "string" },
-      example: { foo: "bar" },
     },
     headers: {
       type: "object",
       xml: { name: "headers" },
       additionalProperties: { type: "string" },
-      example: { Accept: "application/xml", Host: "echo.kulala.app" },
     },
-    origin: { type: "string", example: "127.0.0.1" },
-    url: { type: "string", example: "https://echo.kulala.app/get?foo=bar" },
+    origin: { type: "string", example: "127.0.0.1", xml: { name: "origin" } },
+    url: {
+      type: "string",
+      example: "https://echo.kulala.app/get?foo=bar",
+      xml: { name: "url" },
+    },
     form: {
       type: "object",
       xml: { name: "form" },
     },
-    data: { type: "string", example: "" },
+    data: { type: "string", example: "", xml: { name: "data" } },
     json: {
       type: "object",
       nullable: true,
@@ -52,12 +78,22 @@ export const echoResponseXmlSchema = {
   },
 } as const;
 
+export const statusResponseXmlExample = `<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <code>404</code>
+  <description>Not Found</description>
+</response>`;
+
 export const statusResponseXmlSchema = {
   type: "object",
   xml: { name: "response" },
   properties: {
-    code: { type: "integer", example: 404 },
-    description: { type: "string", example: "Not Found" },
+    code: { type: "integer", example: 404, xml: { name: "code" } },
+    description: {
+      type: "string",
+      example: "Not Found",
+      xml: { name: "description" },
+    },
   },
 } as const;
 
@@ -67,9 +103,11 @@ export const echoResponseContent = {
   },
   "application/xml": {
     schema: echoResponseXmlSchema,
+    example: echoResponseXmlExample,
   },
   "text/xml": {
     schema: echoResponseXmlSchema,
+    example: echoResponseXmlExample,
   },
   "text/html": {
     schema: {

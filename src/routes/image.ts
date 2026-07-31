@@ -1,45 +1,114 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { serveStatic } from "hono/bun";
-import { createMiddleware } from "hono/factory";
-import { createSimpleRoute } from "./../utils";
+import { createSimpleRoute } from "../utils";
 
 const imageRouter = new OpenAPIHono();
+const imagesDir = join(import.meta.dir, "../../static/images");
 
-const imageContent = {
-  "image/svg+xml": { schema: { type: "string", format: "binary" } },
-  "image/png": { schema: { type: "string", format: "binary" } },
-  "image/jpeg": { schema: { type: "string", format: "binary" } },
-  "image/webp": { schema: { type: "string", format: "binary" } },
+const FORMATS = {
+  svg: { file: "svg.svg", type: "image/svg+xml" },
+  png: { file: "png.png", type: "image/png" },
+  jpeg: { file: "jpeg.jpeg", type: "image/jpeg" },
+  webp: { file: "webp.webp", type: "image/webp" },
+} as const;
+
+type Format = keyof typeof FORMATS;
+
+/**
+ * Structured SVG schema + object example so Swagger UI emits a real <svg> tree.
+ * A string example under image/svg+xml gets wrapped/escaped (e.g. <svg>&lt;svg…),
+ * because Swagger treats +xml media types as XML documents.
+ */
+const svgSchema = {
+  type: "object" as const,
+  xml: {
+    name: "svg",
+    namespace: "http://www.w3.org/2000/svg",
+  },
+  properties: {
+    width: {
+      type: "string" as const,
+      xml: { attribute: true },
+    },
+    height: {
+      type: "string" as const,
+      xml: { attribute: true },
+    },
+    viewBox: {
+      type: "string" as const,
+      xml: { attribute: true },
+    },
+    rect: {
+      type: "object" as const,
+      properties: {
+        width: { type: "string" as const, xml: { attribute: true } },
+        height: { type: "string" as const, xml: { attribute: true } },
+        fill: { type: "string" as const, xml: { attribute: true } },
+      },
+    },
+    circle: {
+      type: "object" as const,
+      properties: {
+        cx: { type: "string" as const, xml: { attribute: true } },
+        cy: { type: "string" as const, xml: { attribute: true } },
+        r: { type: "string" as const, xml: { attribute: true } },
+        fill: { type: "string" as const, xml: { attribute: true } },
+      },
+    },
+  },
+  example: {
+    width: "64",
+    height: "64",
+    viewBox: "0 0 64 64",
+    rect: { width: "64", height: "64", fill: "#0f172a" },
+    circle: { cx: "32", cy: "32", r: "20", fill: "#38bdf8" },
+  },
 };
 
-const imageRootMiddleware = createMiddleware(async (c, next) => {
-  const type = c.req.header("accept");
-  switch (type) {
-    case "image/webp":
-      c.req.path = "webp.webp";
-      break;
-    case "image/svg+xml":
-      c.req.path = "svg.svg";
-      break;
-    case "image/png":
-      c.req.path = "png.png";
-      break;
-    case "image/jpeg":
-      c.req.path = "jpeg.jpeg";
-      break;
-    case "image/*":
-    default:
-      c.req.path = "svg.svg";
-  }
-  await next();
-});
+const imageContent = {
+  "image/svg+xml": {
+    schema: svgSchema,
+  },
+  "image/png": {
+    schema: { type: "string" as const, format: "binary" as const },
+  },
+  "image/jpeg": {
+    schema: { type: "string" as const, format: "binary" as const },
+  },
+  "image/webp": {
+    schema: { type: "string" as const, format: "binary" as const },
+  },
+};
 
-const staticHandler = serveStatic({ root: "./static/images" });
+const resolveFormat = (accept: string | undefined): Format => {
+  switch (accept) {
+    case "image/webp":
+      return "webp";
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpeg";
+    case "image/svg+xml":
+      return "svg";
+    default:
+      return "svg";
+  }
+};
+
+const serveFormat = (format: Format) => {
+  const meta = FORMATS[format];
+  const body = readFileSync(join(imagesDir, meta.file));
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": meta.type },
+  });
+};
 
 imageRouter.openapi(
   createSimpleRoute({
     tags: ["Images"],
-    summary: "Serve an image based on the Accept header",
+    summary: "Serve the mistweaverco logo based on the Accept header",
     method: "get",
     path: "/",
     responses: {
@@ -49,14 +118,13 @@ imageRouter.openapi(
       },
     },
   }),
-  imageRootMiddleware,
-  staticHandler,
+  (c) => serveFormat(resolveFormat(c.req.header("accept"))),
 );
 
 imageRouter.openapi(
   createSimpleRoute({
     tags: ["Images"],
-    summary: "Serve a static image by format name",
+    summary: "Serve the mistweaverco logo by format name",
     method: "get",
     path: "/{format}",
     parameters: [
@@ -72,15 +140,16 @@ imageRouter.openapi(
         description: "Image content",
         content: imageContent,
       },
+      404: { description: "Unknown format" },
     },
   }),
-  serveStatic({
-    root: "./static/images",
-    rewriteRequestPath: (path) => {
-      const newPath = path.replace("/image/", "");
-      return newPath + "." + newPath;
-    },
-  }),
+  (c) => {
+    const format = c.req.param("format") as Format;
+    if (!(format in FORMATS)) {
+      return c.json({ error: "Unknown format" }, 404);
+    }
+    return serveFormat(format);
+  },
 );
 
 export { imageRouter };

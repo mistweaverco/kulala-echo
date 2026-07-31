@@ -50,9 +50,7 @@ export type NegotiatedContentType =
   | "text/html"
   | "text/plain";
 
-export const negotiateContentType = (
-  accept: string | undefined,
-): NegotiatedContentType => {
+export const negotiateContentType = (accept: string | undefined): NegotiatedContentType => {
   if (!accept) {
     return "application/json";
   }

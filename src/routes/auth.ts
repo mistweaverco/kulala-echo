@@ -1,8 +1,9 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { basicAuth } from "hono/basic-auth";
-import { bearerAuth } from "hono/bearer-auth";
 import type { Context } from "hono";
-import { createSimpleRoute, getDefaultRoute, jsonResponse } from "./../utils";
+import { basicAuth } from "hono/basic-auth";
+import { createSimpleRoute, jsonResponse, md5, randomString } from "../utils";
+
+const REALM = "httpbun realm";
 
 const authRouter = new OpenAPIHono();
 
@@ -22,196 +23,277 @@ const bearerSuccessSchema = {
   },
 } as const;
 
-const authErrorSchema = {
+const digestErrorSchema = {
   type: "object",
   properties: {
     authenticated: { type: "boolean" },
+    token: { type: "string" },
     error: { type: "string" },
   },
 } as const;
 
-const registerBasicAuth = (path: string, summary: string) => {
-  authRouter.use(
-    path.replace(/\{(\w+)\}/g, ":$1"),
-    basicAuth({
-      verifyUser: (username, password, c) => {
-        return (
-          username === c.req.param("user") &&
-          password === c.req.param("password")
-        );
-      },
-    }),
-  );
-  authRouter.openapi(
-    getDefaultRoute({
-      tags: ["Auth"],
-      summary,
-      path,
-      parameters: [
-        {
-          name: "user",
-          in: "path",
-          required: true,
-          schema: { type: "string" },
-        },
-        {
-          name: "password",
-          in: "path",
-          required: true,
-          schema: { type: "string" },
-        },
-      ],
-      method: "get",
-      requestDescription: "Requires HTTP Basic Auth.",
-      responseDescription: "200 OK",
-      customResponses: {
-        200: { description: "OK", content: { "application/json": { schema: authSuccessSchema } } },
-        401: { description: "Unauthorized" },
-      },
-    }),
-    (c) => {
-      const auth = c.req.header("authorization");
-      const credentials = Buffer.from(auth!.slice(6), "base64").toString();
-      const username = credentials.split(":")[0];
-      return c.json({ authenticated: true, user: username });
-    },
-  );
-};
+// --- Basic Auth ---
 
-registerBasicAuth("/basic-auth/{user}/{password}", "HTTP Basic Auth (httpbun)");
-registerBasicAuth("/basic/{user}/{password}", "HTTP Basic Auth (legacy /auth prefix)");
-registerBasicAuth("/hidden-basic/{user}/{password}", "HTTP Basic Auth (hidden)");
+authRouter.use(
+  "/basic-auth/:user/:passwd",
+  basicAuth({
+    realm: REALM,
+    verifyUser: (username, password, c) =>
+      username === c.req.param("user") && password === c.req.param("passwd"),
+  }),
+);
+
+authRouter.openapi(
+  createSimpleRoute({
+    tags: ["Auth"],
+    summary: "HTTP Basic Auth",
+    method: "get",
+    path: "/basic-auth/{user}/{passwd}",
+    parameters: [
+      { name: "user", in: "path", required: true, schema: { type: "string" } },
+      { name: "passwd", in: "path", required: true, schema: { type: "string" } },
+    ],
+    responses: {
+      200: jsonResponse(authSuccessSchema),
+      401: { description: "Unauthorized" },
+    },
+  }),
+  (c) => {
+    const auth = c.req.header("authorization") ?? "";
+    const credentials = Buffer.from(auth.slice(6), "base64").toString();
+    const user = credentials.split(":")[0] ?? "";
+    return c.json({ authenticated: true, user });
+  },
+);
+
+// --- Bearer Auth ---
+
+authRouter.openapi(
+  createSimpleRoute({
+    tags: ["Auth"],
+    summary: "HTTP Bearer Auth (token required in path)",
+    method: "get",
+    path: "/bearer",
+    responses: {
+      404: { description: "Missing token in path" },
+    },
+  }),
+  (c) => c.text("missing/non-empty token, use /bearer/<expected_token> instead", 404),
+);
 
 authRouter.openAPIRegistry.registerComponent("securitySchemes", "Bearer", {
   type: "http",
   scheme: "bearer",
 });
 
-const registerBearerAuth = (
-  path: string,
-  summary: string,
-  verifyToken: (token: string, c: Context) => boolean,
-) => {
-  authRouter.use(
-    path.replace(/\{(\w+)\}/g, ":$1"),
-    bearerAuth({ verifyToken }),
-  );
-  authRouter.openapi(
-    getDefaultRoute({
-      tags: ["Auth"],
-      summary,
-      path,
-      security: [{ Bearer: [] }],
-      method: "get",
-      requestDescription: "Requires HTTP Bearer Auth.",
-      responseDescription: "200 OK",
-      customResponses: {
-        200: { description: "OK", content: { "application/json": { schema: bearerSuccessSchema } } },
-        401: { description: "Unauthorized" },
-      },
-    }),
-    (c) => {
-      const token = c.req.header("authorization")?.split(" ")[1] ?? "";
-      return c.json({ authenticated: true, token });
+authRouter.openapi(
+  createSimpleRoute({
+    tags: ["Auth"],
+    summary: "HTTP Bearer Auth",
+    method: "get",
+    path: "/bearer/{token}",
+    security: [{ Bearer: [] }],
+    parameters: [{ name: "token", in: "path", required: true, schema: { type: "string" } }],
+    responses: {
+      200: jsonResponse(bearerSuccessSchema),
+      401: { description: "Unauthorized" },
     },
-  );
-};
+  }),
+  (c) => {
+    const expectedToken = c.req.param("token") ?? "";
+    const authHeader = c.req.header("authorization") ?? "";
 
-registerBearerAuth("/bearer", "HTTP Bearer Auth — any token", (token) => !!token);
-registerBearerAuth(
-  "/bearer/{expectedToken}",
-  "HTTP Bearer Auth — validate against expected token",
-  (token, c) => !!token && token === c.req.param("expectedToken"),
+    if (!authHeader.startsWith("Bearer ")) {
+      c.header("WWW-Authenticate", `Bearer realm="${REALM}"`);
+      return c.body(null, 401);
+    }
+
+    const token = authHeader.slice("Bearer ".length);
+    return c.json({
+      authenticated: token !== "" && expectedToken === token,
+      token,
+    });
+  },
 );
 
-const digestHandler = (c: Context) => {
-  const auth = c.req.header("authorization");
-  if (!auth) {
-    return c.json({ authenticated: false, error: "missing authorization header" }, 401);
+// --- Digest Auth ---
+
+const parseDigestAuthHeader = (header: string): Record<string, string> => {
+  const details: Record<string, string> = {};
+  const re = /([a-z]+)=(?:"([^"]+)"|([^,]+))/g;
+  for (const match of header.matchAll(re)) {
+    details[match[1]] = match[2] || match[3] || "";
   }
-  const qop = c.req.param("qop");
-  if (qop && !["auth", "auth-int"].includes(qop)) {
-    return c.json({ authenticated: false, error: "invalid qop" }, 401);
+  return details;
+};
+
+const computeDigestAuthResponse = (
+  username: string,
+  password: string,
+  serverNonce: string,
+  nc: string,
+  clientNonce: string,
+  qop: string,
+  method: string,
+  path: string,
+  entityBody: string,
+): string => {
+  if (qop !== "" && qop !== "auth" && qop !== "auth-int") {
+    throw new Error(`unsupported qop: ${JSON.stringify(qop)}`);
   }
-  const algorithm = c.req.param("algorithm")?.toLowerCase();
-  if (algorithm) {
-    const allowedAlgorithms = ["md5", "sha-256", "sha-512"];
-    if (!allowedAlgorithms.includes(algorithm)) {
-      return c.json({ authenticated: false, error: "invalid algorithm" }, 401);
+
+  const ha1 = md5(`${username}:${REALM}:${password}`);
+  const ha2 =
+    qop === "" || qop === "auth"
+      ? md5(`${method}:${path}`)
+      : md5(`${method}:${path}:${md5(entityBody)}`);
+
+  if (qop === "") {
+    return md5(`${ha1}:${serverNonce}:${ha2}`);
+  }
+  return md5(`${ha1}:${serverNonce}:${nc}:${clientNonce}:${qop}:${ha2}`);
+};
+
+const unauthorizedDigest = (c: Context, expectedQop: string, setCookie: boolean, error: string) => {
+  const qop = expectedQop || "auth";
+  const newNonce = randomString();
+  const opaque = randomString();
+
+  c.header(
+    "WWW-Authenticate",
+    `Digest realm="${REALM}", qop="${qop}", nonce="${newNonce}", opaque="${opaque}", algorithm=MD5, stale=FALSE`,
+  );
+  if (setCookie) {
+    c.header("Set-Cookie", `nonce=${newNonce}`);
+  }
+  return c.json({ authenticated: false, token: "", error }, 401);
+};
+
+const isTruthyRequireCookie = (value: string | undefined): boolean =>
+  value === "true" || value === "1" || value === "t";
+
+const digestHandler = async (c: Context) => {
+  const expectedQop = c.req.param("qop") ?? "";
+  const expectedUsername = c.req.param("user") ?? "";
+  const expectedPassword = c.req.param("passwd") ?? "";
+  const requireCookie = isTruthyRequireCookie(c.req.query("require-cookie"));
+
+  if (
+    expectedQop !== "" &&
+    expectedQop !== "auth" &&
+    expectedQop !== "auth-int" &&
+    expectedQop !== "auth,auth-int"
+  ) {
+    return unauthorizedDigest(c, "", requireCookie, "Error: invalid qop");
+  }
+
+  const authHeader = c.req.header("authorization");
+  if (!authHeader) {
+    return unauthorizedDigest(c, expectedQop, requireCookie, "missing authorization header");
+  }
+
+  const givenDetails = parseDigestAuthHeader(authHeader);
+
+  if (expectedQop !== "") {
+    const supportedQops = expectedQop.split(",");
+    const givenQop = givenDetails.qop ?? "";
+    if (!supportedQops.includes(givenQop)) {
+      return unauthorizedDigest(c, expectedQop, requireCookie, 'Error: "Unsupported QOP"\n');
     }
   }
-  const [type, credentials] = auth.split(" ");
-  if (type !== "Digest") {
-    return c.json({ authenticated: false, error: "invalid auth type" }, 401);
+
+  const givenNonce = givenDetails.nonce ?? "";
+
+  if (requireCookie) {
+    const cookieHeader = c.req.header("cookie") ?? "";
+    const nonceCookie = cookieHeader
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("nonce="));
+    if (!nonceCookie) {
+      return unauthorizedDigest(c, expectedQop, requireCookie, 'Error: "Missing nonce cookie"\n');
+    }
+    const expectedNonce = nonceCookie.slice("nonce=".length);
+    if (givenNonce !== expectedNonce) {
+      const msg = `Error: "Nonce mismatch"\nGiven: ${JSON.stringify(givenNonce)}\nExpected: ${JSON.stringify(expectedNonce)}`;
+      return unauthorizedDigest(c, expectedQop, requireCookie, msg);
+    }
   }
-  const [username, password] = Buffer.from(credentials, "base64")
-    .toString()
-    .split(":");
-  if (
-    username !== c.req.param("username") ||
-    password !== c.req.param("password")
-  ) {
-    return c.json({ authenticated: false, error: "invalid credentials" }, 401);
+
+  const path = new URL(c.req.url).pathname;
+  const entityBody = await c.req.text();
+
+  let expectedResponseCode: string;
+  try {
+    expectedResponseCode = computeDigestAuthResponse(
+      expectedUsername,
+      expectedPassword,
+      givenNonce,
+      givenDetails.nc ?? "",
+      givenDetails.cnonce ?? "",
+      givenDetails.qop ?? "",
+      c.req.method,
+      path,
+      entityBody,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return unauthorizedDigest(c, expectedQop, requireCookie, `Error: ${JSON.stringify(message)}\n`);
   }
-  return c.json({ authenticated: true, user: username });
+
+  const givenResponseCode = givenDetails.response ?? "";
+  if (expectedResponseCode !== givenResponseCode) {
+    const msg = `Error: "Response code mismatch"\nGiven: ${JSON.stringify(givenResponseCode)}\nExpected: ${JSON.stringify(expectedResponseCode)}`;
+    return unauthorizedDigest(c, expectedQop, requireCookie, msg);
+  }
+
+  return c.json({ authenticated: true, user: expectedUsername });
 };
 
 const digestResponses = {
   200: jsonResponse(authSuccessSchema),
-  401: jsonResponse(authErrorSchema, "Unauthorized"),
+  401: jsonResponse(digestErrorSchema, "Unauthorized"),
 };
 
-const digestRoutes = [
-  {
-    path: "/digest-auth/{qop}/{username}/{password}",
-    summary: "Digest Auth with qop (httpbun)",
-    parameters: [
-      { name: "qop", in: "path" as const, required: true, schema: { type: "string" } },
-      { name: "username", in: "path" as const, required: true, schema: { type: "string" } },
-      { name: "password", in: "path" as const, required: true, schema: { type: "string" } },
-    ],
-  },
-  {
-    path: "/digest-auth/{username}/{password}",
-    summary: "Digest Auth (httpbun, default qop=auth)",
-    parameters: [
-      { name: "username", in: "path" as const, required: true, schema: { type: "string" } },
-      { name: "password", in: "path" as const, required: true, schema: { type: "string" } },
-    ],
-  },
-  {
-    path: "/digest/{qop}/{username}/{password}",
-    summary: "Digest Auth with qop (legacy /auth prefix)",
-    parameters: [
-      { name: "qop", in: "path" as const, required: true, schema: { type: "string" } },
-      { name: "username", in: "path" as const, required: true, schema: { type: "string" } },
-      { name: "password", in: "path" as const, required: true, schema: { type: "string" } },
-    ],
-  },
-  {
-    path: "/digest/{qop}/{username}/{password}/{algorithm}",
-    summary: "Digest Auth with qop and algorithm (legacy /auth prefix)",
-    parameters: [
-      { name: "qop", in: "path" as const, required: true, schema: { type: "string" } },
-      { name: "username", in: "path" as const, required: true, schema: { type: "string" } },
-      { name: "password", in: "path" as const, required: true, schema: { type: "string" } },
-      { name: "algorithm", in: "path" as const, required: true, schema: { type: "string" } },
-    ],
-  },
-];
+const digestRequireCookieParam = {
+  name: "require-cookie",
+  in: "query" as const,
+  required: false,
+  schema: { type: "string" as const },
+  description: "When true/1/t, set and verify a nonce cookie",
+};
 
-for (const route of digestRoutes) {
-  authRouter.openapi(
-    createSimpleRoute({
-      tags: ["Auth"],
-      summary: route.summary,
-      method: "get",
-      path: route.path,
-      parameters: route.parameters,
-      responses: digestResponses,
-    }),
-    digestHandler,
-  );
-}
+authRouter.openapi(
+  createSimpleRoute({
+    tags: ["Auth"],
+    summary: "Digest Auth with qop",
+    method: "get",
+    path: "/digest-auth/{qop}/{user}/{passwd}",
+    parameters: [
+      { name: "qop", in: "path", required: true, schema: { type: "string" } },
+      { name: "user", in: "path", required: true, schema: { type: "string" } },
+      { name: "passwd", in: "path", required: true, schema: { type: "string" } },
+      digestRequireCookieParam,
+    ],
+    responses: digestResponses,
+  }),
+  digestHandler,
+);
+
+authRouter.openapi(
+  createSimpleRoute({
+    tags: ["Auth"],
+    summary: "Digest Auth (default qop=auth)",
+    method: "get",
+    path: "/digest-auth/{user}/{passwd}",
+    parameters: [
+      { name: "user", in: "path", required: true, schema: { type: "string" } },
+      { name: "passwd", in: "path", required: true, schema: { type: "string" } },
+      digestRequireCookieParam,
+    ],
+    responses: digestResponses,
+  }),
+  digestHandler,
+);
 
 export { authRouter };

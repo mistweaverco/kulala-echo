@@ -1,5 +1,10 @@
 export { authRouter } from "./auth";
+export { cacheRouter } from "./cache";
+export { contentRouter } from "./content";
+export { cookieRouter } from "./cookies";
 export { imageRouter } from "./image";
+export { mixRouter } from "./mix";
+export { oauthRouter, oidcRouter } from "./oauth";
 export { rootRouter } from "./root";
 export { statusRouter } from "./status";
-export { cookieRouter } from "./cookies";
+export { streamRouter } from "./stream";

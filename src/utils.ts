@@ -1,9 +1,10 @@
-import { Context } from "hono";
+import { createHash } from "node:crypto";
+import { createRoute, type RouteConfig } from "@hono/zod-openapi";
+import type { Context } from "hono";
 import { getConnInfo } from "hono/bun";
-import { OpenAPIHono, createRoute, type RouteConfig } from "@hono/zod-openapi";
-import { ContentfulStatusCode } from "hono/utils/http-status";
-import { negotiateContentType, objectToXml } from "./xml";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { echoResponseContent } from "./openapi-schemas";
+import { negotiateContentType, objectToXml } from "./xml";
 
 interface GetDefaultRouteParams {
   tags: RouteConfig["tags"];
@@ -17,15 +18,9 @@ interface GetDefaultRouteParams {
   customResponses?: RouteConfig["responses"];
 }
 
-export const HTTP_METHODS = [
-  "get",
-  "post",
-  "put",
-  "patch",
-  "delete",
-  "head",
-  "options",
-] as const;
+export const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"] as const;
+
+export const BYTES_SIZE_LIMIT = Number(process.env.ENDPOINT_BYTES_SIZE_LIMIT ?? 100_000);
 
 export const echoResponseSchema = {
   type: "object",
@@ -45,10 +40,7 @@ export const echoResponseSchema = {
   },
 } as const;
 
-export const jsonResponse = (
-  schema: Record<string, unknown>,
-  description = "OK",
-) => ({
+export const jsonResponse = (schema: Record<string, unknown>, description = "OK") => ({
   description,
   content: {
     "application/json": { schema },
@@ -77,7 +69,7 @@ export const createSimpleRoute = (opts: {
   });
 
 export const registerAllMethods = (
-  router: OpenAPIHono,
+  router: import("@hono/zod-openapi").OpenAPIHono,
   opts: {
     tags: RouteConfig["tags"];
     summary: string;
@@ -112,9 +104,9 @@ export const getDefaultRoute = (opts: GetDefaultRouteParams) => {
     },
   };
   if (opts.customResponses) {
-    Object.entries(opts.customResponses).forEach(([key, value]) => {
+    for (const [key, value] of Object.entries(opts.customResponses)) {
       defaultResponses[key] = value;
-    });
+    }
   }
   return createRoute({
     tags: opts.tags,
@@ -124,44 +116,45 @@ export const getDefaultRoute = (opts: GetDefaultRouteParams) => {
     parameters: opts.parameters,
     security: opts.security,
     request: {
-      body: opts.method === "get" ? undefined : {
-        content: {
-          "application/json": {
-            schema: { type: "object" },
-          },
-          "text/plain": {
-            schema: { type: "string", default: "hello echo" },
-          },
-          "multipart/form-data": {
-            schema: {
-              type: "object",
-              default: { key1: "value1", key2: "value2" },
+      body:
+        opts.method === "get"
+          ? undefined
+          : {
+              content: {
+                "application/json": {
+                  schema: { type: "object" },
+                },
+                "text/plain": {
+                  schema: { type: "string", default: "hello echo" },
+                },
+                "multipart/form-data": {
+                  schema: {
+                    type: "object",
+                    default: { key1: "value1", key2: "value2" },
+                  },
+                },
+                "application/x-www-form-urlencoded": {
+                  schema: {
+                    type: "object",
+                    default: { key1: "value1", key2: "value2" },
+                  },
+                },
+              },
+              description: opts.requestDescription,
+              required: false,
             },
-          },
-          "application/x-www-form-urlencoded": {
-            schema: {
-              type: "object",
-              default: { key1: "value1", key2: "value2" },
-            },
-          },
-        },
-        description: opts.requestDescription,
-        required: false,
-      },
     },
     responses: defaultResponses,
   });
 };
 
-const parseQueryArgs = (c: Context): Record<string, string | string[]> => {
+export const parseQueryArgs = (c: Context): Record<string, string | string[]> => {
   const url = new URL(c.req.url);
   const args: Record<string, string | string[]> = {};
   url.searchParams.forEach((value, name) => {
     const existing = args[name];
     if (existing !== undefined) {
-      args[name] = Array.isArray(existing)
-        ? [...existing, value]
-        : [existing, value];
+      args[name] = Array.isArray(existing) ? [...existing, value] : [existing, value];
     } else {
       args[name] = value;
     }
@@ -198,7 +191,6 @@ export function parseEchoRequestBody(
       json = null;
     }
   } else if (contentType === "multipart/form-data") {
-    // multipart is handled via formData() in getRequestInfo
     return { data: "", json: null, form, files };
   } else if (contentType) {
     data = body;
@@ -214,6 +206,18 @@ export function parseEchoRequestBody(
   return { data: data ?? "", json, form, files };
 }
 
+export const getClientOrigin = (c: Context): string => {
+  const forwarded = c.req.header("x-forwarded-for");
+  if (forwarded) {
+    return forwarded.split(",")[0]?.trim() ?? "";
+  }
+  try {
+    return getConnInfo(c).remote.address ?? "";
+  } catch {
+    return "";
+  }
+};
+
 export const getRequestInfo = async (c: Context) => {
   const contentType = c.req.header("content-type")?.split(";")[0]?.trim() ?? "";
   let form: Record<string, unknown> = {};
@@ -224,11 +228,17 @@ export const getRequestInfo = async (c: Context) => {
   if (contentType === "multipart/form-data") {
     const formData = await c.req.raw.formData();
     for (const [name, value] of formData.entries()) {
-      if (value instanceof File) {
+      if (typeof value === "object" && value !== null && "arrayBuffer" in value) {
+        const file = value as File;
+        const content = await file.text();
+        const headers: Record<string, string> = {
+          "Content-Type": file.type || "application/octet-stream",
+        };
         files[name] = {
-          filename: value.name,
-          size: value.size,
-          content: await value.text(),
+          filename: file.name,
+          size: file.size,
+          headers,
+          content,
         };
       } else {
         form[name] = value;
@@ -244,11 +254,18 @@ export const getRequestInfo = async (c: Context) => {
     Object.assign(files, parsed.files);
   }
 
+  const headers = c.req.header();
+  // Join repeated headers with comma like httpbun
+  const normalizedHeaders: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    normalizedHeaders[key] = Array.isArray(value) ? value.join(",") : String(value);
+  }
+
   return {
     method: c.req.method,
     args: parseQueryArgs(c),
-    headers: c.req.header(),
-    origin: getConnInfo(c).remote.address ?? "",
+    headers: normalizedHeaders,
+    origin: getClientOrigin(c),
     url: c.req.url,
     form,
     data: data ?? "",
@@ -267,21 +284,21 @@ export const getDefaultResponseBody = async (
   switch (contentType) {
     case "text/plain": {
       let headers = "";
-      Object.entries(info.headers).forEach(([key, value]) => {
+      for (const [key, value] of Object.entries(info.headers)) {
         headers += `${key}: ${value}\n`;
-      });
+      }
       return c.text(
         `method:\n${info.method}\n\nheaders:\n${headers}\n\ndata:\n${
-          info.data !== "" ? info.data + "\n" : ""
+          info.data !== "" ? `${info.data}\n` : ""
         }`,
         fixedStatusCode,
       );
     }
     case "text/html": {
       let headers = "";
-      Object.entries(info.headers).forEach(([key, value]) => {
+      for (const [key, value] of Object.entries(info.headers)) {
         headers += `<li>${key}: ${value}</li>\n`;
-      });
+      }
       return c.html(
         `<html>
 <head>
@@ -306,8 +323,56 @@ ${info.data !== "" ? info.data : ""}
       return c.body(objectToXml(info), fixedStatusCode, {
         "Content-Type": `${contentType}; charset=utf-8`,
       });
-    case "application/json":
     default:
       return c.json(info, fixedStatusCode);
   }
+};
+
+export const md5 = (input: string): string => createHash("md5").update(input).digest("hex");
+
+export const randomString = (length = 16): string => {
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let out = "";
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  for (const b of bytes) {
+    out += chars[b % chars.length];
+  }
+  return out;
+};
+
+export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const canonicalHeader = (name: string): string =>
+  name
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join("-");
+
+export const statusText = (code: number): string => {
+  const texts: Record<number, string> = {
+    100: "Continue",
+    101: "Switching Protocols",
+    200: "OK",
+    201: "Created",
+    204: "No Content",
+    301: "Moved Permanently",
+    302: "Found",
+    303: "See Other",
+    304: "Not Modified",
+    307: "Temporary Redirect",
+    308: "Permanent Redirect",
+    400: "Bad Request",
+    401: "Unauthorized",
+    403: "Forbidden",
+    404: "Not Found",
+    405: "Method Not Allowed",
+    408: "Request Timeout",
+    409: "Conflict",
+    422: "Unprocessable Entity",
+    429: "Too Many Requests",
+    500: "Internal Server Error",
+    502: "Bad Gateway",
+    503: "Service Unavailable",
+  };
+  return texts[code] ?? "Unknown";
 };
