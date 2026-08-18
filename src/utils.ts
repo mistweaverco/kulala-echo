@@ -16,6 +16,7 @@ interface GetDefaultRouteParams {
   requestDescription: string;
   responseDescription: string;
   customResponses?: RouteConfig["responses"];
+  requiredBody?: boolean;
 }
 
 export const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"] as const;
@@ -90,6 +91,7 @@ export const registerAllMethods = (
         requestDescription: `${method.toUpperCase()} request`,
         responseDescription: "200 OK",
         customResponses: opts.customResponses,
+        requiredBody: method !== "get" && method !== "head" && method !== "options",
       }),
       opts.handler,
     );
@@ -141,7 +143,7 @@ export const getDefaultRoute = (opts: GetDefaultRouteParams) => {
                 },
               },
               description: opts.requestDescription,
-              required: false,
+              required: opts.requiredBody ?? false,
             },
     },
     responses: defaultResponses,

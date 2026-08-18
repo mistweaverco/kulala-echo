@@ -31,6 +31,7 @@ for (const route of methodRoutes) {
       method: route.method,
       requestDescription: `${route.method} data to the server`,
       responseDescription: "200 OK",
+      requiredBody: route.method !== "get" && route.method !== "delete",
     }),
     async (c) => getDefaultResponseBody(c),
   );
